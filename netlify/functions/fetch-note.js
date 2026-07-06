@@ -74,6 +74,21 @@ function parseNoteData(rawData) {
   var title = note.title || '';
   var content = note.desc || '';
 
+  // 清洗1: 移除 desc 末尾的话题标签 #xxx[话题]#（与 hash_tag 重复）
+  content = content.replace(/#[^\s#]*\[话题\]#/g, '');
+
+  // 清洗2: 移除菱形/方块等乱码装饰字符（TikHub 抓取时原帖图标转换而来）
+  //   ◆◇◆菱形系列 + ■□▲▼等几何块 + �替换字符
+  //   注意：❶❷❸❹ 带圈数字保留（用户确认正常显示）
+  content = content.replace(/[\u25C6\u25C7\u25C8\u25C9\u25CB\u25CC\u25CE\u25CF]+/g, '');
+  content = content.replace(/[\u25A0-\u25A9\u25B0-\u25B9\u25C0\u25CA]+/g, '');
+  content = content.replace(/[\uFFFD]/g, '');
+
+  // 清洗3: 清理小红书表情码 [笑哭R][赞R] 等
+  content = content.replace(/\[\w+R\]/g, '');
+
+  content = content.trim();
+
   var images = [];
   (note.images_list || []).forEach(function (img) {
     var url = img.original || img.url_size_large || img.url;
