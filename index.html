@@ -43,14 +43,46 @@
 
     .hidden { display: none; }
 
-    /* 打印样式 */
+    /* 打印样式 — 极简布局，避免浏览器光栅化文本为图片 */
     @media print {
       .hero { display: none !important; }
-      body { background: #fff; }
-      .container { max-width: 100%; padding: 0; }
-      .note { border-radius: 0; box-shadow: none; }
-      .note-header { padding: 0 0 16px; }
-      .note-images img { max-width: 100%; }
+      body { background: #fff; font-size: 11pt; color: #000; }
+
+      /* 关键：消除一切可能导致光栅化的 CSS 属性 */
+      * {
+        border-radius: 0 !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+        display: block !important;
+        position: static !important;
+        float: none !important;
+      }
+
+      /* 恢复必要的内联元素 */
+      span, a, b, strong, i, em { display: inline !important; }
+      img { display: block !important; max-width: 100%; height: auto; page-break-inside: avoid; }
+
+      /* 内容区：去掉容器限制，全宽打印 */
+      .container { max-width: 100% !important; margin: 0 !important; padding: 20px 30px !important; }
+
+      .note { background: none !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
+
+      .note-header { padding: 10px 0 12px !important; text-align: center !important; border-bottom: 2px solid #333 !important; }
+      .note-title { font-size: 18pt !important; font-weight: bold !important; line-height: 1.4 !important; margin-bottom: 4px !important; }
+      .note-author { font-size: 9pt !important; color: #666 !important; }
+
+      .note-images { padding: 10px 0 !important; }
+      .note-images img { width: 100% !important; max-height: 500px !important; object-fit: contain; page-break-inside: avoid; }
+
+      .note-content { padding: 14px 0 !important; font-size: 11pt !important; line-height: 1.7 !important; white-space: pre-wrap !important; word-wrap: break-word !important; }
+
+      .note-tags { padding: 10px 0 !important; border-top: 1px solid #999 !important; margin-top: 8px !important; }
+      .note-tags span { display: inline !important; color: #333 !important; background: none !important; padding: 0 6px 0 0 !important; border-radius: 0 !important; font-size: 9pt !important; border: none !important; }
+
+      .note-footer { text-align: center !important; color: #aaa !important; font-size: 8pt !important; padding: 15px 0 5px !important; }
+
+      /* 分页控制 */
+      h1, h2, h3, .note-header, .note-images img, .note-content { page-break-inside: avoid; }
     }
   </style>
 </head>
