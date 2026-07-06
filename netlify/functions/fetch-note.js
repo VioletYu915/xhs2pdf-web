@@ -92,7 +92,11 @@ function parseNoteData(rawData) {
   var images = [];
   (note.images_list || []).forEach(function (img) {
     var url = img.original || img.url_size_large || img.url;
-    if (url) images.push(url);
+    if (url) {
+      // 将 WebP 格式改为 JPG（pdf-lib 不支持 WebP）
+      url = url.replace('format/webp', 'format/jpg');
+      images.push(url);
+    }
   });
 
   var tags = [];
