@@ -67,8 +67,9 @@
     <div id="note" class="note hidden"></div>
   </div>
 
-  <!-- pdf-lib: 纯前端生成矢量 PDF -->
+  <!-- pdf-lib 核心 + fontkit（嵌入中文字体必需） -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
 
   <script>
     async function fetchNote() {
@@ -160,6 +161,9 @@
       try {
         // 创建 PDF 文档
         var doc = await PDFLib.PDFDocument.create();
+
+        // 注册 fontkit（嵌入中文字体前必须调用）
+        doc.registerFontkit(fontkit);
 
         // 加载中文字体（思源黑体简体中文子集）
         var fontUrl = 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff';
