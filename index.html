@@ -148,6 +148,34 @@
       });
     }
 
+    // pdf-lib 文本自动换行（用 widthOfTextAtSize 逐字测量）
+    function wrapText(font, text, fontSize, maxWidth) {
+      var lines = [];
+      var paragraphs = (text || '').split('\n');
+      for (var p = 0; p < paragraphs.length; p++) {
+        var para = paragraphs[p];
+        if (!para) { lines.push(''); continue; }
+        var currentLine = '';
+        for (var i = 0; i < para.length; i++) {
+          var testLine = currentLine + para[i];
+          var width = font.widthOfTextAtSize(testLine, fontSize);
+          if (width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = para[i];
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+      }
+      return lines;
+    }
+
+    // 过滤字体不支持的字符（保留中文、英文、数字、常用标点）
+    function cleanText(text) {
+      return (text || '').replace(/[^\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u0020-\u007e\n\r]/g, '');
+    }
+
     // 用 pdf-lib 生成矢量 PDF（文字可选/可复制）
     async function downloadPdf() {
       var noteData = window.__currentNoteData;
@@ -159,29 +187,24 @@
       btn.textContent = '生成中...';
 
       try {
-        // 创建 PDF 文档
         var doc = await PDFLib.PDFDocument.create();
-
-        // 注册 fontkit（嵌入中文字体前必须调用）
         doc.registerFontkit(fontkit);
 
-        // 加载中文字体（思源黑体简体中文子集）
-        var fontUrl = 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff';
+        // 加载完整中文字体（NotoSansCJKsc-Regular.otf ~16MB，浏览器会缓存）
+        var fontUrl = 'https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf';
         var fontBytes = await fetch(fontUrl).then(function(r) { return r.arrayBuffer(); });
         var font = await doc.embedFont(fontBytes);
 
-        // A4 尺寸 (pt)
         var pageWidth = 595.28;
         var pageHeight = 841.89;
         var margin = 50;
         var contentWidth = pageWidth - margin * 2;
 
-        // 首页
         var page = doc.addPage([pageWidth, pageHeight]);
         var y = pageHeight - margin;
 
         // === 标题 ===
-        var titleLines = font.splitTextToSize(noteData.title || '', contentWidth);
+        var titleLines = wrapText(font, cleanText(noteData.title || ''), 22, contentWidth);
         for (var t = 0; t < titleLines.length; t++) {
           if (y < margin + 30) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
           page.drawText(titleLines[t], { x: margin, y: y, size: 22, font: font, color: PDFLib.rgb(0, 0, 0) });
@@ -191,7 +214,7 @@
         // === 作者 ===
         if (noteData.author) {
           y -= 8;
-          page.drawText(noteData.author, { x: margin, y: y, size: 10, font: font, color: PDFLib.rgb(0.5, 0.5, 0.5) });
+          page.drawText(cleanText(noteData.author), { x: margin, y: y, size: 10, font: font, color: PDFLib.rgb(0.5, 0.5, 0.5) });
           y -= 20;
         }
 
@@ -206,17 +229,18 @@
           try {
             var imgRes = await fetch(images[i]);
             var imgBytes = await imgRes.arrayBuffer();
-            var isPng = images[i].toLowerCase().indexOf('.png') !== -1;
-            var img = isPng ? await doc.embedPng(imgBytes) : await doc.embedJpg(imgBytes);
-
+            // 小红书图片URL无扩展名，先试JPG再试PNG
+            var img;
+            try {
+              img = await doc.embedJpg(imgBytes);
+            } catch (e1) {
+              img = await doc.embedPng(imgBytes);
+            }
             var maxW = contentWidth;
             var maxH = 420;
-            var scaleW = maxW / img.width;
-            var scaleH = maxH / img.height;
-            var scale = Math.min(scaleW, scaleH, 1);
+            var scale = Math.min(maxW / img.width, maxH / img.height, 1);
             var w = img.width * scale;
             var h = img.height * scale;
-
             if (y - h < margin + 20) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
             page.drawImage(img, { x: margin + (maxW - w) / 2, y: y - h, width: w, height: h });
             y -= h + 12;
@@ -228,10 +252,10 @@
 
         // === 正文 ===
         if (noteData.content) {
-          var contentLines = font.splitTextToSize(noteData.content, contentWidth);
+          var contentLines = wrapText(font, cleanText(noteData.content), 12, contentWidth);
           for (var c = 0; c < contentLines.length; c++) {
             if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
-            page.drawText(contentLines[c], { x: margin, y: y, size: 12, font: font, color: PDFLib.rgb(0, 0, 0), lineHeight: 18 });
+            page.drawText(contentLines[c], { x: margin, y: y, size: 12, font: font, color: PDFLib.rgb(0, 0, 0) });
             y -= 18;
           }
         }
@@ -240,16 +264,19 @@
         var tags = noteData.tags || [];
         if (tags.length > 0) {
           y -= 15;
-          if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
           var tagText = '#' + tags.join('  #');
-          page.drawText(tagText, { x: margin, y: y, size: 9, font: font, color: PDFLib.rgb(0.94, 0.14, 0.26) }); // 小红书红
-          y -= 14;
+          var tagLines = wrapText(font, cleanText(tagText), 9, contentWidth);
+          for (var tg = 0; tg < tagLines.length; tg++) {
+            if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+            page.drawText(tagLines[tg], { x: margin, y: y, size: 9, font: font, color: PDFLib.rgb(0.94, 0.14, 0.26) });
+            y -= 12;
+          }
         }
 
         // === 页脚 ===
         y -= 25;
         if (y < margin + 14) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
-        page.drawText('由笔记收藏助手生成 · 仅供个人学习收藏', {
+        page.drawText(cleanText('由笔记收藏助手生成 仅供个人学习收藏'), {
           x: margin, y: y, size: 8, font: font, color: PDFLib.rgb(0.6, 0.6, 0.6)
         });
 
@@ -259,7 +286,7 @@
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
         a.href = url;
-        a.download = '小红书笔记_' + Date.now().toString(36) + '.pdf';
+        a.download = 'xiaohongshu_note.pdf';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
