@@ -43,46 +43,9 @@
 
     .hidden { display: none; }
 
-    /* 打印样式 — 极简布局，避免浏览器光栅化文本为图片 */
+    /* 打印样式（极简版 — pdf-lib 生成 PDF 后不再依赖此样式） */
     @media print {
-      .hero { display: none !important; }
-      body { background: #fff; font-size: 11pt; color: #000; }
-
-      /* 关键：消除一切可能导致光栅化的 CSS 属性 */
-      * {
-        border-radius: 0 !important;
-        overflow: visible !important;
-        box-shadow: none !important;
-        display: block !important;
-        position: static !important;
-        float: none !important;
-      }
-
-      /* 恢复必要的内联元素 */
-      span, a, b, strong, i, em { display: inline !important; }
-      img { display: block !important; max-width: 100%; height: auto; page-break-inside: avoid; }
-
-      /* 内容区：去掉容器限制，全宽打印 */
-      .container { max-width: 100% !important; margin: 0 !important; padding: 20px 30px !important; }
-
-      .note { background: none !important; border-radius: 0 !important; box-shadow: none !important; overflow: visible !important; }
-
-      .note-header { padding: 10px 0 12px !important; text-align: center !important; border-bottom: 2px solid #333 !important; }
-      .note-title { font-size: 18pt !important; font-weight: bold !important; line-height: 1.4 !important; margin-bottom: 4px !important; }
-      .note-author { font-size: 9pt !important; color: #666 !important; }
-
-      .note-images { padding: 10px 0 !important; }
-      .note-images img { width: 100% !important; max-height: 500px !important; object-fit: contain; page-break-inside: avoid; }
-
-      .note-content { padding: 14px 0 !important; font-size: 11pt !important; line-height: 1.7 !important; white-space: pre-wrap !important; word-wrap: break-word !important; }
-
-      .note-tags { padding: 10px 0 !important; border-top: 1px solid #999 !important; margin-top: 8px !important; }
-      .note-tags span { display: inline !important; color: #333 !important; background: none !important; padding: 0 6px 0 0 !important; border-radius: 0 !important; font-size: 9pt !important; border: none !important; }
-
-      .note-footer { text-align: center !important; color: #aaa !important; font-size: 8pt !important; padding: 15px 0 5px !important; }
-
-      /* 分页控制 */
-      h1, h2, h3, .note-header, .note-images img, .note-content { page-break-inside: avoid; }
+      .hero, .toolbar, .status { display: none !important; }
     }
   </style>
 </head>
@@ -94,7 +57,7 @@
       <div style="display:flex;gap:10px;">
         <input id="urlInput" placeholder="粘贴小红书笔记链接，如 https://www.xiaohongshu.com/explore/xxxxx" />
         <button id="fetchBtn" onclick="fetchNote()">获取笔记</button>
-        <button id="printBtn" class="print-btn hidden" onclick="window.print()">打印PDF</button>
+        <button id="printBtn" class="print-btn hidden" onclick="downloadPdf()">下载PDF</button>
       </div>
     </div>
   </div>
@@ -103,6 +66,9 @@
     <div id="status" class="status">粘贴小红书笔记链接，点击「获取笔记」</div>
     <div id="note" class="note hidden"></div>
   </div>
+
+  <!-- pdf-lib: 纯前端生成矢量 PDF -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 
   <script>
     async function fetchNote() {
@@ -169,6 +135,9 @@
         '<div class="note-content">' + escapeHtml(data.content) + '</div>' +
         (tagsHtml ? '<div class="note-tags">' + tagsHtml + '</div>' : '') +
         '<div class="note-footer">由笔记收藏助手生成 · 仅供个人学习收藏</div>';
+
+      // 存储数据供 PDF 下载使用
+      window.__currentNoteData = data;
     }
 
     function escapeHtml(str) {
@@ -176,6 +145,129 @@
       return String(str).replace(/[&<>"']/g, function(c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
       });
+    }
+
+    // 用 pdf-lib 生成矢量 PDF（文字可选/可复制）
+    async function downloadPdf() {
+      var noteData = window.__currentNoteData;
+      if (!noteData) { alert('请先获取笔记'); return; }
+
+      var btn = document.getElementById('printBtn');
+      var originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+
+      try {
+        // 创建 PDF 文档
+        var doc = await PDFDocument.create();
+
+        // 加载中文字体（思源黑体简体中文子集）
+        var fontUrl = 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff';
+        var fontBytes = await fetch(fontUrl).then(function(r) { return r.arrayBuffer(); });
+        var font = await doc.embedFont(fontBytes);
+
+        // A4 尺寸 (pt)
+        var pageWidth = 595.28;
+        var pageHeight = 841.89;
+        var margin = 50;
+        var contentWidth = pageWidth - margin * 2;
+
+        // 首页
+        var page = doc.addPage([pageWidth, pageHeight]);
+        var y = pageHeight - margin;
+
+        // === 标题 ===
+        var titleLines = font.splitTextToSize(noteData.title || '', contentWidth);
+        for (var t = 0; t < titleLines.length; t++) {
+          if (y < margin + 30) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+          page.drawText(titleLines[t], { x: margin, y: y, size: 22, font: font, color: PDFLib.rgb(0, 0, 0) });
+          y -= 28;
+        }
+
+        // === 作者 ===
+        if (noteData.author) {
+          y -= 8;
+          page.drawText(noteData.author, { x: margin, y: y, size: 10, font: font, color: PDFLib.rgb(0.5, 0.5, 0.5) });
+          y -= 20;
+        }
+
+        // === 分隔线 ===
+        y -= 5;
+        page.drawRectangle({ x: margin, y: y - 1, width: contentWidth, height: 1, color: PDFLib.rgb(0.8, 0.8, 0.8) });
+        y -= 15;
+
+        // === 图片 ===
+        var images = noteData.images || [];
+        for (var i = 0; i < images.length; i++) {
+          try {
+            var imgRes = await fetch(images[i]);
+            var imgBytes = await imgRes.arrayBuffer();
+            var isPng = images[i].toLowerCase().indexOf('.png') !== -1;
+            var img = isPng ? await doc.embedPng(imgBytes) : await doc.embedJpg(imgBytes);
+
+            var maxW = contentWidth;
+            var maxH = 420;
+            var scaleW = maxW / img.width;
+            var scaleH = maxH / img.height;
+            var scale = Math.min(scaleW, scaleH, 1);
+            var w = img.width * scale;
+            var h = img.height * scale;
+
+            if (y - h < margin + 20) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+            page.drawImage(img, { x: margin + (maxW - w) / 2, y: y - h, width: w, height: h });
+            y -= h + 12;
+          } catch (imgErr) {
+            console.warn('图片加载失败:', images[i], imgErr.message);
+          }
+        }
+        y -= 5;
+
+        // === 正文 ===
+        if (noteData.content) {
+          var contentLines = font.splitTextToSize(noteData.content, contentWidth);
+          for (var c = 0; c < contentLines.length; c++) {
+            if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+            page.drawText(contentLines[c], { x: margin, y: y, size: 12, font: font, color: PDFLib.rgb(0, 0, 0), lineHeight: 18 });
+            y -= 18;
+          }
+        }
+
+        // === 标签 ===
+        var tags = noteData.tags || [];
+        if (tags.length > 0) {
+          y -= 15;
+          if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+          var tagText = '#' + tags.join('  #');
+          page.drawText(tagText, { x: margin, y: y, size: 9, font: font, color: PDFLib.rgb(0.94, 0.14, 0.26) }); // 小红书红
+          y -= 14;
+        }
+
+        // === 页脚 ===
+        y -= 25;
+        if (y < margin + 14) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
+        page.drawText('由笔记收藏助手生成 · 仅供个人学习收藏', {
+          x: margin, y: y, size: 8, font: font, color: PDFLib.rgb(0.6, 0.6, 0.6)
+        });
+
+        // 保存并下载
+        var pdfBytes = await doc.save();
+        var blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = '小红书笔记_' + Date.now().toString(36) + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+      } catch (err) {
+        console.error(err);
+        alert('PDF 生成失败: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     // 回车提交
