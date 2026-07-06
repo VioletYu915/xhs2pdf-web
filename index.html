@@ -227,9 +227,11 @@
         var images = noteData.images || [];
         for (var i = 0; i < images.length; i++) {
           try {
-            var imgRes = await fetch(images[i]);
+            // 通过 Netlify Function 代理获取图片（解决 CORS 问题）
+            var proxyUrl = '/.netlify/functions/proxy-image?url=' + encodeURIComponent(images[i]);
+            var imgRes = await fetch(proxyUrl);
             var imgBytes = await imgRes.arrayBuffer();
-            // 小红书图片URL无扩展名，先试JPG再试PNG
+            // 先试JPG，失败再试PNG
             var img;
             try {
               img = await doc.embedJpg(imgBytes);
@@ -257,19 +259,6 @@
             if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
             page.drawText(contentLines[c], { x: margin, y: y, size: 12, font: font, color: PDFLib.rgb(0, 0, 0) });
             y -= 18;
-          }
-        }
-
-        // === 标签 ===
-        var tags = noteData.tags || [];
-        if (tags.length > 0) {
-          y -= 15;
-          var tagText = '#' + tags.join('  #');
-          var tagLines = wrapText(font, cleanText(tagText), 9, contentWidth);
-          for (var tg = 0; tg < tagLines.length; tg++) {
-            if (y < margin + 16) { page = doc.addPage([pageWidth, pageHeight]); y = pageHeight - margin; }
-            page.drawText(tagLines[tg], { x: margin, y: y, size: 9, font: font, color: PDFLib.rgb(0.94, 0.14, 0.26) });
-            y -= 12;
           }
         }
 
